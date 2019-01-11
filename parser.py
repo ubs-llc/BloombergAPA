@@ -4,6 +4,9 @@ import sys
 
 import requests
 from bs4 import BeautifulSoup
+import boto3
+
+s3 = boto3.resource('s3')
 
 
 class Document:
@@ -13,22 +16,26 @@ class Document:
 
 
 base_url = 'https://www.bloombergapa.com'
-url = 'https://www.bloombergapa.com/historyfiles'
+url = 'https://www.bloombergapa.com/slicefiles'
 path = os.path.dirname(os.path.abspath(__file__)) + '\\Data\\'
+
+BUCKET_NAME = 'ib-bucket-aws'
 
 while True:
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
 
-    parsed_documents = set()
-    tags = soup.find(class_='tab-content').find_all('a')
-    documents = set(map(lambda x:Document(x.text.replace(':',''), x['href']), tags))
-    print(sys.getsizeof(parsed_documents))
-    for doc in documents - parsed_documents:
-        r = requests.get(base_url + doc.link)
+    last_document = None
+    tag = soup.find(class_='tab-content').find('a')
+    document = Document(tag.text.replace(':',''), tag['href'])
+
+    if last_document != document:
+        r = requests.get(base_url + document.link)
         if r.status_code==200:
             content = r.text
-            with open(path + doc.filename, 'w+') as file:
+            with open(path + document.filename, 'w+') as file:
                 file.write(r.text)
-        parsed_documents.add(doc)
+            obj = s3.Object(BUCKET_NAME, 'BloombergAPA/' + document.filename)
+            obj.put(Body=r.content)
+        last_document = document
     time.sleep(60)
